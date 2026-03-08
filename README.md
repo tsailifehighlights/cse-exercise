@@ -29,7 +29,7 @@ The company has hundreds of APIs across the organization. Your engagement is sco
 **The Platform Team (your counterpart):** A 4-person platform/ops team spans all the product lines. They manage the AWS accounts, CI/CD templates, and shared infrastructure. They don't write application code but they own the deployment pipelines and would maintain any cross-cutting automation after CSE leaves. They care about: working within their existing CI/CD patterns (they won't adopt a new tool just for Postman), being able to onboard new services themselves without calling you, and keeping maintenance low. They're stretched thin.
 
 **Key contacts:**
-- VP of Platform Engineering (your primary stakeholder -- cares about the renewal story)
+- VP of Platform Engineering (your primary stakeholder -- cares about the value)
 - A senior DevOps engineer on the platform team (your hands-on partner)
 - An engineering manager on the payments side who's willing to pilot first
 - A QA lead on the lending side who previously used Postman heavily at a prior company
