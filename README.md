@@ -124,7 +124,15 @@ These are production actions maintained by the CSE team. Start with these -- the
 **Practical Setup Notes:**
 
 - You'll need a Postman Enterprise trial for this exercise (the actions use features not available on free plans). Here's a walkthrough: [How to Activate a Postman Enterprise Trial](https://www.loom.com/share/f7daa6e93845489fa2b7b55dfde95676)
-- Generate your own Postman API key from your Postman account settings.
+- Generate your own Postman API key (PMAK) from your Postman account settings. Set it as a GitHub secret called `POSTMAN_API_KEY` on your repos.
+- The pre-built actions also require a **Postman access token** for workspace linking, governance, and environment association features. To obtain it:
+  1. Install the [Postman CLI](https://learning.postman.com/docs/postman-cli/postman-cli-overview/) if you haven't already.
+  2. Run `postman login` and complete the browser-based authentication.
+  3. Extract the token: `cat ~/.postman/postmanrc | jq -r '.login._profiles[].accessToken'`
+  4. Set it as a GitHub secret called `POSTMAN_ACCESS_TOKEN` on your repos.
+  > **Note:** This token is session-scoped and will expire. Without it, the actions still run but governance assignment, workspace linking, and system environment associations are silently skipped.
+- The actions' `spec-url` input expects a URL the runner can fetch at build time. Since you're checking the OpenAPI spec files into your repo, use the raw GitHub URL (e.g., `https://raw.githubusercontent.com/<you>/<repo>/main/specs/payment-refund-api-openapi.yaml`).
+- The actions persist state across runs using GitHub repository variables and may commit generated workflow files. The default `GITHUB_TOKEN` may not have sufficient permissions for these operations — review the action READMEs for guidance on authentication inputs.
 - You do NOT need an AWS account. The specs represent the customer's APIs but you're working against the Postman API, not deploying cloud infrastructure.
 - Create a GitHub repo per service (this mirrors how the tooling works in real engagements -- one repo per service with its own workflow).
 
