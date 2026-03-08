@@ -1,0 +1,426 @@
+openapi: 3.0.3
+info:
+  title: Lending Platform API - Loan Origination Service
+  description: |
+    API for managing loan application origination, underwriting decisions, and
+    document collection in the Lending domain. This service handles the full
+    lifecycle from application submission through approval or denial.
+
+    **Authentication:**
+    - Service-to-service: mTLS (mutual TLS)
+    - Internal gateway: JWT token (Bearer token)
+
+    **Rate Limits:**
+    - Standard: 200 requests/minute
+    - Batch operations: 50 requests/minute
+  version: 1.4.0
+  contact:
+    name: Lending Platform Team
+    email: lending-platform@example.com
+    url: https://docs.example.com/lending-apis
+  license:
+    name: Proprietary
+    url: https://example.com/license
+
+servers:
+  - url: https://lending-api.example.com/v1
+    description: Production environment
+  - url: https://lending-api-staging.example.com/v1
+    description: Staging environment
+  - url: https://lending-api-dev.example.com/v1
+    description: Development environment
+
+tags:
+  - name: Applications
+    description: Loan application submission and management
+  - name: Underwriting
+    description: Automated and manual underwriting decisions
+  - name: Documents
+    description: Document upload and verification
+  - name: Health
+    description: Service health and readiness checks
+
+security:
+  - JWT: []
+
+paths:
+  /applications:
+    post:
+      tags:
+        - Applications
+      summary: Submit a new loan application
+      description: |
+        Creates a new loan application with applicant information, requested
+        loan terms, and initial credit data. Triggers async underwriting
+        evaluation upon successful submission.
+
+        **Business Rules:**
+        - Applicant must be 18+ years old
+        - Requested amount must be between $1,000 and $500,000
+        - One active application per applicant per product type
+      operationId: createApplication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+            examples:
+              personal_loan:
+                summary: Personal loan application
+                value:
+                  applicantId: "app_9876543210"
+                  productType: "personal_loan"
+                  requestedAmount: 25000
+                  termMonths: 36
+                  purpose: "debt_consolidation"
+                  annualIncome: 85000
+                  employmentStatus: "full_time"
+      responses:
+        '201':
+          description: Application created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          description: Invalid application data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate active application exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags:
+        - Applications
+      summary: List loan applications
+      description: Returns a paginated list of loan applications with optional filtering.
+      operationId: listApplications
+      parameters:
+        - name: status
+          in: query
+          description: Filter by application status
+          schema:
+            type: string
+            enum: [submitted, under_review, approved, denied, withdrawn]
+        - name: productType
+          in: query
+          description: Filter by loan product type
+          schema:
+            type: string
+            enum: [personal_loan, auto_loan, home_equity, business_loan]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationList'
+
+  /applications/{applicationId}:
+    get:
+      tags:
+        - Applications
+      summary: Get application details
+      description: Returns full details of a specific loan application including current status and underwriting results if available.
+      operationId: getApplication
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '404':
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /applications/{applicationId}/underwriting:
+    post:
+      tags:
+        - Underwriting
+      summary: Trigger underwriting evaluation
+      description: |
+        Initiates or re-initiates the underwriting evaluation for an application.
+        This is normally triggered automatically on application submission but
+        can be manually invoked for re-evaluation after document updates.
+      operationId: triggerUnderwriting
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnderwritingRequest'
+      responses:
+        '202':
+          description: Underwriting evaluation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnderwritingStatus'
+        '404':
+          description: Application not found
+        '409':
+          description: Underwriting already in progress
+
+  /applications/{applicationId}/documents:
+    post:
+      tags:
+        - Documents
+      summary: Upload a document
+      description: Uploads a supporting document for a loan application (income verification, ID, bank statements, etc.)
+      operationId: uploadDocument
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                documentType:
+                  type: string
+                  enum: [income_verification, identity, bank_statement, tax_return, employment_letter]
+              required:
+                - file
+                - documentType
+      responses:
+        '201':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '400':
+          description: Invalid document or unsupported format
+
+    get:
+      tags:
+        - Documents
+      summary: List application documents
+      operationId: listDocuments
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Document'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Service health check
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    JWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Internal JWT token for service-to-service communication
+
+  schemas:
+    CreateApplicationRequest:
+      type: object
+      required:
+        - applicantId
+        - productType
+        - requestedAmount
+        - termMonths
+        - annualIncome
+        - employmentStatus
+      properties:
+        applicantId:
+          type: string
+          description: Unique identifier for the applicant
+        productType:
+          type: string
+          enum: [personal_loan, auto_loan, home_equity, business_loan]
+        requestedAmount:
+          type: number
+          format: double
+          minimum: 1000
+          maximum: 500000
+        termMonths:
+          type: integer
+          enum: [12, 24, 36, 48, 60]
+        purpose:
+          type: string
+        annualIncome:
+          type: number
+          format: double
+        employmentStatus:
+          type: string
+          enum: [full_time, part_time, self_employed, retired, unemployed]
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+        applicantId:
+          type: string
+        productType:
+          type: string
+        requestedAmount:
+          type: number
+        termMonths:
+          type: integer
+        status:
+          type: string
+          enum: [submitted, under_review, approved, denied, withdrawn]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        underwritingResult:
+          $ref: '#/components/schemas/UnderwritingStatus'
+
+    ApplicationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Application'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    UnderwritingRequest:
+      type: object
+      properties:
+        reevaluationReason:
+          type: string
+        includeManualReview:
+          type: boolean
+          default: false
+
+    UnderwritingStatus:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        status:
+          type: string
+          enum: [pending, in_progress, completed, failed]
+        decision:
+          type: string
+          enum: [approved, denied, referred_to_manual]
+        riskScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        evaluatedAt:
+          type: string
+          format: date-time
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+        applicationId:
+          type: string
+        documentType:
+          type: string
+        fileName:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        verificationStatus:
+          type: string
+          enum: [pending, verified, rejected]
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        uptime:
+          type: string
+        dependencies:
+          type: object
+          properties:
+            database:
+              type: string
+            creditBureau:
+              type: string
+            documentStore:
+              type: string
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object

@@ -1,0 +1,459 @@
+openapi: 3.0.3
+info:
+  title: Insurance Platform API - Claims Processing Service
+  description: |
+    API for managing insurance claims from initial filing through adjudication
+    and settlement. Handles property, auto, and liability claims across
+    multiple lines of business.
+
+    **Authentication:**
+    - External integrations: OAuth 2.0 (Bearer token)
+    - Internal services: API key (X-API-Key header)
+
+    **Rate Limits:**
+    - Standard: 150 requests/minute
+    - File upload: 20 requests/minute
+
+    **Note:** This service runs on a mixed Lambda/ECS infrastructure and uses
+    GitLab CI for deployments. CI/CD integration patterns differ from the
+    Payments and Lending domains which use GitHub Actions.
+  version: 3.0.1
+  contact:
+    name: Insurance Engineering Team
+    email: insurance-engineering@example.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://claims-api.example.com/v3
+    description: Production environment
+  - url: https://claims-api-staging.example.com/v3
+    description: Staging environment
+  - url: https://claims-api-dev.example.com/v3
+    description: Development environment
+
+tags:
+  - name: Claims
+    description: Claim filing and lifecycle management
+  - name: Adjudication
+    description: Claim evaluation and decision workflows
+  - name: Settlements
+    description: Payment and settlement processing
+  - name: Health
+    description: Service health checks
+
+security:
+  - ApiKey: []
+  - OAuth2: []
+
+paths:
+  /claims:
+    post:
+      tags:
+        - Claims
+      summary: File a new claim
+      description: |
+        Creates a new insurance claim with incident details, policy reference,
+        and initial damage assessment. Triggers automated triage and routing.
+
+        **Business Rules:**
+        - Policy must be active and in good standing
+        - Claim must be filed within 90 days of incident date
+        - One claim per incident per policy (duplicates rejected)
+      operationId: fileClaim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileClaimRequest'
+            examples:
+              auto_claim:
+                summary: Auto insurance claim
+                value:
+                  policyId: "pol_auto_12345"
+                  lineOfBusiness: "auto"
+                  incidentDate: "2026-02-15"
+                  description: "Rear-end collision at intersection"
+                  estimatedDamage: 8500
+                  claimantContact:
+                    name: "Jane Smith"
+                    phone: "+1-555-0123"
+                    email: "jane.smith@example.com"
+      responses:
+        '201':
+          description: Claim filed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+        '400':
+          description: Invalid claim data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate claim for this incident
+
+    get:
+      tags:
+        - Claims
+      summary: List claims
+      description: Returns paginated claims with optional filtering by status, line of business, or date range.
+      operationId: listClaims
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [filed, triaged, under_investigation, adjudicated, settled, denied, closed]
+        - name: lineOfBusiness
+          in: query
+          schema:
+            type: string
+            enum: [auto, property, liability, workers_comp]
+        - name: filedAfter
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: filedBefore
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of claims
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimList'
+
+  /claims/{claimId}:
+    get:
+      tags:
+        - Claims
+      summary: Get claim details
+      operationId: getClaim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Claim details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+        '404':
+          description: Claim not found
+
+  /claims/{claimId}/adjudicate:
+    post:
+      tags:
+        - Adjudication
+      summary: Submit adjudication decision
+      description: |
+        Records the adjudication decision for a claim. Can be an automated
+        decision from the rules engine or a manual decision from an adjuster.
+      operationId: adjudicateClaim
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjudicationRequest'
+      responses:
+        '200':
+          description: Adjudication recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdjudicationResult'
+        '404':
+          description: Claim not found
+        '409':
+          description: Claim already adjudicated
+
+  /claims/{claimId}/settlement:
+    post:
+      tags:
+        - Settlements
+      summary: Process claim settlement
+      description: Initiates payment processing for an approved claim.
+      operationId: processSettlement
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementRequest'
+      responses:
+        '201':
+          description: Settlement initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settlement'
+        '400':
+          description: Claim not eligible for settlement
+        '404':
+          description: Claim not found
+
+    get:
+      tags:
+        - Settlements
+      summary: Get settlement status
+      operationId: getSettlement
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Settlement details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settlement'
+        '404':
+          description: No settlement found for this claim
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Service health check
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Internal API key for service-to-service communication
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            claims:read: Read claims
+            claims:write: Create and update claims
+            settlements:process: Process settlements
+
+  schemas:
+    FileClaimRequest:
+      type: object
+      required:
+        - policyId
+        - lineOfBusiness
+        - incidentDate
+        - description
+      properties:
+        policyId:
+          type: string
+        lineOfBusiness:
+          type: string
+          enum: [auto, property, liability, workers_comp]
+        incidentDate:
+          type: string
+          format: date
+        description:
+          type: string
+          maxLength: 2000
+        estimatedDamage:
+          type: number
+          format: double
+        claimantContact:
+          $ref: '#/components/schemas/ContactInfo'
+
+    ContactInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+        policyId:
+          type: string
+        lineOfBusiness:
+          type: string
+        status:
+          type: string
+          enum: [filed, triaged, under_investigation, adjudicated, settled, denied, closed]
+        incidentDate:
+          type: string
+          format: date
+        description:
+          type: string
+        estimatedDamage:
+          type: number
+        filedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        assignedAdjuster:
+          type: string
+        adjudication:
+          $ref: '#/components/schemas/AdjudicationResult'
+        settlement:
+          $ref: '#/components/schemas/Settlement'
+
+    ClaimList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Claim'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AdjudicationRequest:
+      type: object
+      required:
+        - decision
+        - approvedAmount
+      properties:
+        decision:
+          type: string
+          enum: [approved, denied, partial_approval]
+        approvedAmount:
+          type: number
+          format: double
+        adjusterNotes:
+          type: string
+        denialReason:
+          type: string
+        isAutomated:
+          type: boolean
+          default: false
+
+    AdjudicationResult:
+      type: object
+      properties:
+        claimId:
+          type: string
+        decision:
+          type: string
+        approvedAmount:
+          type: number
+        adjudicatedAt:
+          type: string
+          format: date-time
+        adjusterNotes:
+          type: string
+
+    SettlementRequest:
+      type: object
+      required:
+        - paymentMethod
+        - amount
+      properties:
+        paymentMethod:
+          type: string
+          enum: [ach, check, wire]
+        amount:
+          type: number
+          format: double
+        payeeName:
+          type: string
+        payeeAccountId:
+          type: string
+
+    Settlement:
+      type: object
+      properties:
+        claimId:
+          type: string
+        amount:
+          type: number
+        paymentMethod:
+          type: string
+        status:
+          type: string
+          enum: [initiated, processing, completed, failed]
+        initiatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        referenceNumber:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        uptime:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
